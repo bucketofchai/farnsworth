@@ -1,0 +1,137 @@
+logging {
+  level  = "info"
+  format = "logfmt"
+}
+
+prometheus.exporter.unix "puck" {
+  procfs_path = "/host/proc"
+  sysfs_path  = "/host/sys"
+  rootfs_path = "/host/root"
+
+  set_collectors = ["cpu", "loadavg", "meminfo", "filesystem", "netdev", "uname", "time"]
+
+  filesystem {
+    fs_types_exclude      = "^(autofs|binfmt_misc|bpf|cgroup2?|configfs|debugfs|devpts|devtmpfs|fusectl|hugetlbfs|iso9660|mqueue|nsfs|overlay|proc|procfs|pstore|rpc_pipefs|securityfs|selinuxfs|squashfs|sysfs|tracefs|tmpfs)$"
+    mount_points_exclude  = "^/(dev|proc|run/credentials/.+|sys|var/lib/docker/.+|var/lib/containerd/.+)($|/)"
+    mount_timeout         = "5s"
+  }
+
+  netdev {
+    device_exclude = "^(lo|veth.*|br-.*|docker.*|tun.*|wg.*|tailscale.*)$"
+  }
+}
+
+prometheus.exporter.cadvisor "docker" {
+  docker_host      = "unix:///var/run/docker.sock"
+  containerd_host  = "/run/containerd/containerd.sock"
+  storage_duration = "1m0s"
+  docker_only      = true
+}
+
+prometheus.scrape "unix" {
+  targets         = prometheus.exporter.unix.puck.targets
+  scrape_interval = "15s"
+  forward_to      = [prometheus.remote_write.vm.receiver]
+}
+
+prometheus.scrape "cadvisor" {
+  targets         = prometheus.exporter.cadvisor.docker.targets
+  scrape_interval = "15s"
+  forward_to      = [prometheus.remote_write.vm.receiver]
+}
+
+prometheus.remote_write "vm" {
+  endpoint {
+    url = "http://victoriametrics:8428/api/v1/write"
+  }
+}
+
+local.file_match "plex" {
+  path_targets = [
+    {
+      __path__  = "/plex-logs/*.log",
+      service   = "plex",
+      dataset   = "plex",
+    },
+  ]
+}
+
+local.file_match "bazarr" {
+  path_targets = [
+    {
+      __path__  = "/bazarr-logs/*.log",
+      service   = "bazarr",
+      dataset   = "bazarr",
+    },
+  ]
+}
+
+local.file_match "host" {
+  path_targets = [
+    {
+      __path__  = "/var/log/auth.log",
+      service   = "ssh",
+      dataset   = "system.auth",
+    },
+    {
+      __path__  = "/var/log/ufw.log",
+      service   = "ufw",
+      dataset   = "system.ufw",
+    },
+  ]
+}
+
+loki.source.file "plex" {
+  targets    = local.file_match.plex.targets
+  forward_to = [loki.process.redact.receiver]
+}
+
+loki.source.file "bazarr" {
+  targets    = local.file_match.bazarr.targets
+  forward_to = [loki.process.redact.receiver]
+}
+
+loki.source.file "host" {
+  targets    = local.file_match.host.targets
+  forward_to = [loki.process.redact.receiver]
+}
+
+discovery.docker "containers" {
+  host = "unix:///var/run/docker.sock"
+}
+
+loki.source.docker "containers" {
+  host       = "unix:///var/run/docker.sock"
+  targets    = discovery.docker.containers.targets
+  labels     = {service = "docker", dataset = "docker.logs"}
+  forward_to = [loki.process.redact.receiver]
+}
+
+loki.process "redact" {
+  stage.replace {
+    expression = "(?i)X-Plex-Token=[^&\\s\"']+"
+    replace    = "X-Plex-Token=REDACTED"
+  }
+
+  stage.replace {
+    expression = "(?i)X-API-KEY[=:\\s]+[A-Za-z0-9_-]+"
+    replace    = "X-API-KEY=REDACTED"
+  }
+
+  stage.replace {
+    expression = "(?i)apikey[=:\\s]+[A-Za-z0-9_-]+"
+    replace    = "apikey=REDACTED"
+  }
+
+  forward_to = [loki.write.vl.receiver]
+}
+
+loki.write "vl" {
+  endpoint {
+    url = "http://victorialogs:9428/insert/loki/api/v1/push"
+  }
+
+  external_labels = {
+    host = "puck",
+  }
+}

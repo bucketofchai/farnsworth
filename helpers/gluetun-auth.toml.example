@@ -1,0 +1,14 @@
+# Copied to /home/klg/gluetun/auth/config.toml on puck (not committed).
+# HTTP basic auth for Gluetun's control server (VPN status for plex-chat).
+
+[[roles]]
+name = "control"
+routes = [
+  "GET /v1/vpn/status",
+  "GET /v1/publicip/ip",
+  "GET /v1/openvpn/portforwarded",
+  "GET /v1/portforward",
+]
+auth = "basic"
+username = "control"
+password = "change-me"

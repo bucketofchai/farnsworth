@@ -1,0 +1,9 @@
+backups/
+*.log
+.env
+.env.local
+proton.env
+scripts/.subtitle-skips.txt
+.venv/
+__pycache__/
+*.pyc

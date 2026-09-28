@@ -1,0 +1,994 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f4f6fb">
+  <meta name="color-scheme" content="light">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <title>she-Knew</title>
+  <style>
+    :root {
+      --bg: #f4f6fb;
+      --panel: rgba(255, 255, 255, 0.82);
+      --ink: #1b1f2a;
+      --muted: #6b7288;
+      --line: rgba(27, 31, 42, 0.08);
+      --accent: #6d5efc;
+      --accent-ink: #fff;
+      --good: #22a06b;
+      --bad: #e5484d;
+      --cobalt: #4b6ef5;
+      --cobalt-deep: #3b55d4;
+      --bubble: #ffffff;
+      --bubble-user: linear-gradient(135deg, #6d5efc 0%, #4b6ef5 55%, #22c1c3 100%);
+      --inset: #f0f3fa;
+      --prism: linear-gradient(90deg, #ff6b8a, #ffb347, #57d68a, #4ecdc4, #6d5efc, #c084fc);
+    }
+    * { box-sizing: border-box; }
+    html {
+      -webkit-text-size-adjust: 100%;
+      height: 100%;
+      height: var(--app-h, 100dvh);
+      max-height: var(--app-h, 100dvh);
+      background: var(--bg);
+    }
+    html, body {
+      margin: 0;
+      overflow: hidden;
+    }
+    body {
+      height: 100%;
+      max-height: 100%;
+      font: 16px/1.45 "Avenir Next", "Segoe UI", ui-sans-serif, system-ui, sans-serif;
+      background:
+        radial-gradient(ellipse 50% 40% at 0% 0%, #ff6b8a14, transparent 50%),
+        radial-gradient(ellipse 45% 36% at 100% 8%, #6d5efc16, transparent 48%),
+        radial-gradient(ellipse 40% 30% at 70% 100%, #4ecdc418, transparent 50%),
+        var(--bg);
+      color: var(--ink);
+      -webkit-tap-highlight-color: transparent;
+      touch-action: manipulation;
+    }
+    .shell {
+      height: 100%;
+      max-height: 100%;
+      min-height: 0;
+      display: grid;
+      grid-template-areas:
+        "top top"
+        "chat side";
+      grid-template-columns: minmax(280px, 1.15fr) minmax(300px, 0.95fr);
+      grid-template-rows: auto minmax(0, 1fr);
+      gap: 16px;
+      padding: 0 max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+    }
+    header {
+      grid-area: top;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+      margin: 0 calc(-1 * max(16px, env(safe-area-inset-right))) 0 calc(-1 * max(16px, env(safe-area-inset-left)));
+      padding: max(12px, env(safe-area-inset-top)) max(20px, env(safe-area-inset-right)) 14px max(20px, env(safe-area-inset-left));
+      background: rgba(255, 255, 255, 0.72);
+      color: var(--ink);
+      backdrop-filter: blur(16px);
+      border-bottom: 1px solid var(--line);
+      box-shadow: none;
+    }
+    header::after {
+      content: "";
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      height: 2px;
+      background: var(--prism);
+      opacity: 0.85;
+    }
+    header { position: relative; }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      min-width: 0;
+    }
+    .logo {
+      width: 44px;
+      height: 44px;
+      flex: 0 0 auto;
+    }
+    .brand-text { min-width: 0; }
+    h1 {
+      font: 750 1.45rem/1 "Avenir Next", "Segoe UI", ui-sans-serif, system-ui, sans-serif;
+      margin: 0;
+      letter-spacing: -0.045em;
+      background: linear-gradient(100deg, #1b1f2a 0%, #4b6ef5 42%, #c084fc 72%, #ff6b8a 100%);
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+    }
+    .status-line {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 4px;
+      min-width: 0;
+    }
+    .health {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 8px 12px;
+      color: var(--muted);
+      font-size: 0.72rem;
+      letter-spacing: 0.02em;
+    }
+    .metrics {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 6px 10px;
+      color: var(--muted);
+      font-size: 0.7rem;
+      font-variant-numeric: tabular-nums;
+    }
+    .metric { white-space: nowrap; }
+    .metric.warn { color: #d97706; }
+    .metric.hot { color: var(--bad); }
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      user-select: none;
+    }
+    .dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 99px;
+      background: #b8bfd0;
+      flex: 0 0 auto;
+    }
+    .chip.up .dot { background: var(--good); }
+    .chip.down .dot { background: var(--bad); }
+    .chip.busy .dot { background: #f59e0b; }
+    .chat, .panel, .downloads, .inventory {
+      min-width: 0;
+      min-height: 0;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      box-shadow: 0 10px 30px rgba(27, 31, 42, 0.06);
+      backdrop-filter: blur(18px);
+    }
+    .chat {
+      grid-area: chat;
+      display: grid;
+      grid-template-rows: minmax(0, 1fr) auto;
+      overflow: hidden;
+    }
+    .side {
+      grid-area: side;
+      display: grid;
+      grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+      gap: 16px;
+      min-width: 0;
+      min-height: 0;
+      padding: 0;
+      overflow: hidden;
+      background: transparent;
+      border: 0;
+      box-shadow: none;
+    }
+    .log {
+      min-height: 0;
+      overflow: auto;
+      overscroll-behavior: contain;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .msg { max-width: 92%; overflow-wrap: break-word; }
+    .msg.user { align-self: flex-end; }
+    .bubble {
+      padding: 10px 14px;
+      border-radius: 16px 16px 16px 6px;
+      background: var(--bubble);
+      border: 1px solid var(--line);
+      white-space: pre-wrap;
+      box-shadow: 0 4px 14px rgba(27, 31, 42, 0.04);
+    }
+    .msg.user .bubble {
+      background: var(--bubble-user);
+      color: #fff;
+      border: 0;
+      border-radius: 16px 16px 6px 16px;
+    }
+    .picks { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+    .quip {
+      margin-top: 8px;
+      color: var(--muted);
+      font-style: italic;
+      font-size: 0.92rem;
+      white-space: pre-wrap;
+    }
+    button.pick, button.suggest, button.send, .inv-item, .dl-item {
+      appearance: none;
+      border: 1px solid var(--line);
+      background: var(--inset);
+      color: var(--ink);
+      text-align: left;
+      border-radius: 12px;
+      padding: 10px 12px;
+      cursor: pointer;
+      font: inherit;
+    }
+    button.pick:hover, button.suggest:hover, button.send:hover, .inv-item:hover { border-color: #c7cbe0; }
+    button.pick small, button.suggest small, .inv-item small, .dl-item small, .meta {
+      display: block;
+      color: var(--muted);
+      margin-top: 4px;
+      font-size: 0.8rem;
+    }
+    .status, .dl-item {
+      margin-top: 8px;
+      cursor: default;
+    }
+    .dl-item { margin-top: 0; width: 100%; }
+    .bar {
+      height: 6px;
+      background: #e7ebf5;
+      border-radius: 99px;
+      overflow: hidden;
+      margin: 8px 0 0;
+    }
+    .bar > span { display: block; height: 100%; background: var(--prism); width: 0; }
+    form {
+      display: flex;
+      gap: 8px;
+      flex-shrink: 0;
+      min-width: 0;
+      padding: 12px;
+      border-top: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.55);
+    }
+    form input, .side input {
+      border: 1px solid var(--line);
+      background: #fff;
+      color: var(--ink);
+      border-radius: 12px;
+      font: inherit;
+    }
+    form input::placeholder, .side input::placeholder { color: #9aa3b8; }
+    form input {
+      flex: 1;
+      width: 0;
+      min-width: 0;
+      padding: 12px;
+    }
+    button.send {
+      width: auto;
+      flex-shrink: 0;
+      font-weight: 700;
+      color: #fff;
+      background: var(--prism);
+      border-color: transparent;
+    }
+    .err { color: var(--bad); }
+    .ok { color: var(--good); }
+    .downloads, .inventory {
+      padding: 12px;
+      display: grid;
+      gap: 8px;
+    }
+    .downloads {
+      grid-template-rows: auto minmax(0, 1fr);
+    }
+    .inventory {
+      grid-template-rows: auto minmax(0, 1fr);
+    }
+    h2 {
+      margin: 0;
+      font-size: 0.95rem;
+      font-weight: 750;
+    }
+    .hint { color: var(--muted); font-size: 0.8rem; margin-top: 2px; }
+    .dl-list {
+      min-height: 0;
+      overflow: auto;
+      overscroll-behavior: contain;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      padding: 6px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: var(--inset);
+    }
+    .inv-toolbar {
+      display: flex;
+      align-items: end;
+      justify-content: space-between;
+      gap: 12px;
+      flex-shrink: 0;
+    }
+    .inventory input {
+      width: min(240px, 48%);
+      min-width: 140px;
+      padding: 8px 10px;
+      font-size: 0.9rem;
+      flex: 1;
+    }
+    .inv-cols {
+      min-height: 0;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      gap: 10px;
+    }
+    .inv-col {
+      min-width: 0;
+      min-height: 0;
+      overflow: hidden;
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: var(--inset);
+    }
+    .inv-col h3 {
+      margin: 0;
+      padding: 8px 10px;
+      font-size: 0.82rem;
+      font-weight: 750;
+      color: var(--muted);
+      border-bottom: 1px solid var(--line);
+    }
+    .inv-col h3 span { color: var(--cobalt); }
+    .inv-list {
+      min-height: 0;
+      overflow: auto;
+      overscroll-behavior: contain;
+      padding: 6px;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .inv-item {
+      border: 0;
+      background: transparent;
+      padding: 7px 8px;
+      border-radius: 10px;
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+      min-width: 0;
+    }
+    .inv-item .title {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .inv-item small {
+      flex: 0 0 auto;
+      margin-top: 0;
+      white-space: nowrap;
+    }
+    .inv-item:hover { background: #fff; border-color: transparent; }
+    .empty { color: var(--muted); font-size: 0.85rem; padding: 4px 2px; }
+    .tabs { display: none; }
+    @media (max-width: 900px) {
+      .shell {
+        gap: 10px;
+        padding: 0 max(10px, env(safe-area-inset-right)) 0 max(10px, env(safe-area-inset-left));
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-rows: auto minmax(0, 1fr) auto;
+      }
+      .shell.tab-chat {
+        grid-template-areas:
+          "top"
+          "chat"
+          "tabs";
+      }
+      .shell.tab-queue,
+      .shell.tab-lib {
+        grid-template-areas:
+          "top"
+          "side"
+          "tabs";
+      }
+      .shell.tab-chat .side,
+      .shell.tab-queue .chat,
+      .shell.tab-lib .chat { display: none; }
+      .shell.tab-queue .inventory,
+      .shell.tab-lib .downloads { display: none; }
+      .shell.tab-queue .side,
+      .shell.tab-lib .side {
+        grid-template-rows: minmax(0, 1fr);
+      }
+      header {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 6px;
+        min-width: 0;
+        margin: 0 calc(-1 * max(10px, env(safe-area-inset-right))) 0 calc(-1 * max(10px, env(safe-area-inset-left)));
+        padding: max(10px, env(safe-area-inset-top)) max(14px, env(safe-area-inset-right)) 12px max(14px, env(safe-area-inset-left));
+      }
+      h1 { font-size: 1.35rem; }
+      .logo { width: 36px; height: 36px; }
+      .status-line { align-items: stretch; }
+      .health, .metrics {
+        justify-content: flex-start;
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        overscroll-behavior-x: contain;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+        gap: 10px 14px;
+      }
+      .health::-webkit-scrollbar, .metrics::-webkit-scrollbar { display: none; }
+      .chip { flex: 0 0 auto; }
+      .log { padding: 12px; -webkit-overflow-scrolling: touch; }
+      .dl-list, .inv-list { -webkit-overflow-scrolling: touch; }
+      form {
+        padding: 10px;
+        gap: 8px;
+      }
+      form input, button.send, button.pick, button.suggest, .inv-item {
+        min-height: 44px;
+      }
+      button.send { padding-inline: 16px; }
+      .inv-item { padding: 10px 10px; }
+      .inv-cols { grid-template-columns: minmax(0, 1fr); }
+      .inv-toolbar { flex-direction: column; align-items: stretch; }
+      .inventory input { width: 100%; min-width: 0; min-height: 44px; }
+      .tabs {
+        display: grid;
+        grid-area: tabs;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 6px;
+        width: 100%;
+        max-width: 100%;
+        padding: 8px 10px max(8px, env(safe-area-inset-bottom));
+        background: rgba(255, 255, 255, 0.82);
+        backdrop-filter: blur(16px);
+        border-top: 1px solid var(--line);
+        box-shadow: none;
+        position: relative;
+      }
+      .tabs::before {
+        content: "";
+        position: absolute;
+        left: 0;
+        right: 0;
+        top: 0;
+        height: 2px;
+        background: var(--prism);
+        opacity: 0.85;
+      }
+      .tabs button {
+        appearance: none;
+        min-height: 44px;
+        min-width: 0;
+        border: 1px solid var(--line);
+        background: #fff;
+        color: var(--muted);
+        border-radius: 12px;
+        font: inherit;
+        font-size: 0.8rem;
+        font-weight: 650;
+        cursor: pointer;
+        padding: 0 4px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .tabs button.on {
+        color: #fff;
+        background: var(--prism);
+        border-color: transparent;
+      }
+      .tabs .count {
+        display: inline-block;
+        margin-left: 4px;
+        font-size: 0.75rem;
+        font-weight: 700;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell tab-chat">
+    <header>
+      <div class="brand">
+        <svg class="logo" viewBox="0 0 48 48" role="img" aria-label="she-Knew">
+          <defs>
+            <linearGradient id="logo-ring" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0%" stop-color="#ff6b8a"/>
+              <stop offset="25%" stop-color="#ffb347"/>
+              <stop offset="50%" stop-color="#57d68a"/>
+              <stop offset="75%" stop-color="#4ecdc4"/>
+              <stop offset="100%" stop-color="#6d5efc"/>
+            </linearGradient>
+          </defs>
+          <rect width="48" height="48" rx="14" fill="#fff"/>
+          <rect x="1.5" y="1.5" width="45" height="45" rx="12.5" fill="none" stroke="url(#logo-ring)" stroke-width="2.4"/>
+          <path d="M12 17h24M12 24h16M12 31h10" stroke="#4b6ef5" stroke-width="2.6" stroke-linecap="round"/>
+          <circle cx="35" cy="32" r="5.4" fill="#6d5efc"/>
+          <path d="M32.8 32.2 34.7 34.1 38 30.4" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <div class="brand-text">
+          <h1>she-Knew</h1>
+        </div>
+      </div>
+      <div class="status-line">
+        <div class="health" id="health">checking…</div>
+        <div class="metrics" id="metrics"></div>
+      </div>
+    </header>
+    <section class="chat">
+      <div class="log" id="log"></div>
+      <form id="form">
+        <input id="q" autocomplete="off" enterkeyhint="send" placeholder="Ask for a show or movie…">
+        <button class="send" type="submit">Send</button>
+      </form>
+    </section>
+    <aside class="side">
+      <section class="downloads" aria-label="Current downloads">
+        <div>
+          <h2>Downloading</h2>
+          <div class="hint" id="dl-meta">Checking qBittorrent…</div>
+        </div>
+        <div class="dl-list" id="dl-list"></div>
+      </section>
+      <section class="inventory" aria-label="Library">
+        <div class="inv-toolbar">
+          <div>
+            <h2>On Plex</h2>
+            <div class="hint" id="inv-meta">Loading library…</div>
+          </div>
+          <input id="inv-filter" type="search" placeholder="Filter titles…" autocomplete="off" enterkeyhint="search">
+        </div>
+        <div class="inv-cols">
+          <section class="inv-col">
+            <h3>Movies <span id="movie-count"></span></h3>
+            <div class="inv-list" id="movie-list"></div>
+          </section>
+          <section class="inv-col">
+            <h3>TV <span id="show-count"></span></h3>
+            <div class="inv-list" id="show-list"></div>
+          </section>
+        </div>
+      </section>
+    </aside>
+    <nav class="tabs" aria-label="Page sections">
+      <button type="button" data-tab="chat" class="on">Chat</button>
+      <button type="button" data-tab="queue">Queue <span class="count" id="queue-count" hidden></span></button>
+      <button type="button" data-tab="lib">Library</button>
+    </nav>
+  </div>
+  <script>
+    const log = document.getElementById("log");
+    const form = document.getElementById("form");
+    const input = document.getElementById("q");
+    const healthEl = document.getElementById("health");
+    const metricsEl = document.getElementById("metrics");
+    const dlMeta = document.getElementById("dl-meta");
+    const dlList = document.getElementById("dl-list");
+    const invMeta = document.getElementById("inv-meta");
+    const invFilter = document.getElementById("inv-filter");
+    const movieList = document.getElementById("movie-list");
+    const showList = document.getElementById("show-list");
+    const movieCount = document.getElementById("movie-count");
+    const showCount = document.getElementById("show-count");
+    const polls = new Map();
+    let library = { movies: [], shows: [] };
+    const shell = document.querySelector(".shell");
+    const queueCount = document.getElementById("queue-count");
+
+    function fitViewport() {
+      const vv = window.visualViewport;
+      const h = Math.round((vv && vv.height) || window.innerHeight);
+      document.documentElement.style.setProperty("--app-h", h + "px");
+    }
+    fitViewport();
+    window.visualViewport?.addEventListener("resize", fitViewport);
+    window.visualViewport?.addEventListener("scroll", fitViewport);
+    window.addEventListener("resize", fitViewport);
+
+    function setTab(name) {
+      shell.classList.remove("tab-chat", "tab-queue", "tab-lib");
+      shell.classList.add("tab-" + name);
+      document.querySelectorAll(".tabs [data-tab]").forEach((btn) => {
+        btn.classList.toggle("on", btn.dataset.tab === name);
+      });
+      if (name === "chat") log.scrollTop = log.scrollHeight;
+    }
+    document.querySelector(".tabs").addEventListener("click", (ev) => {
+      const btn = ev.target.closest("[data-tab]");
+      if (btn) setTab(btn.dataset.tab);
+    });
+
+    function add(role, html) {
+      const wrap = document.createElement("div");
+      wrap.className = "msg " + role;
+      wrap.innerHTML = html;
+      log.appendChild(wrap);
+      log.scrollTop = log.scrollHeight;
+      return wrap;
+    }
+
+    function fillBubble(el, html) {
+      const bubble = (el && el.classList && el.classList.contains("bubble"))
+        ? el
+        : ((el && el.querySelector && el.querySelector(".bubble")) || el);
+      if (!bubble) return false;
+      try {
+        bubble.innerHTML = html;
+      } catch (err) {
+        bubble.textContent = (err && err.message) || "search failed";
+      }
+      log.scrollTop = log.scrollHeight;
+      return true;
+    }
+
+    function errorDetail(data, status) {
+      const detail = data && data.detail;
+      if (typeof detail === "string" && detail) return detail;
+      if (data && typeof data.reply === "string" && data.reply) return data.reply;
+      return status ? "search failed (" + status + ")" : "search failed";
+    }
+
+    function chip(label, ok, detail, busy) {
+      const state = !ok ? "down" : (busy ? "busy" : "up");
+      return `<span class="chip ${state}" title="${escapeHtml(detail || (ok ? "up" : "down"))}"><span class="dot"></span>${escapeHtml(label)}</span>`;
+    }
+
+    function metric(label, warn, hot, title) {
+      const state = hot ? "hot" : (warn ? "warn" : "");
+      return `<span class="metric ${state}" title="${escapeHtml(title || label)}">${escapeHtml(label)}</span>`;
+    }
+
+    function fmtGiB(bytes) {
+      return (Number(bytes || 0) / 1073741824).toFixed(1) + "G";
+    }
+
+    function fmtRate(kbs) {
+      const n = Number(kbs || 0);
+      if (n >= 1024) return (n / 1024).toFixed(1) + " MB/s";
+      return Math.round(n) + " kB/s";
+    }
+
+    function renderHost(h) {
+      if (!metricsEl) return;
+      const host = h && h.host;
+      if (!host) {
+        metricsEl.innerHTML = "";
+        return;
+      }
+      const items = [];
+      if (host.cpu_pct != null) {
+        items.push(metric(
+          "CPU " + host.cpu_pct.toFixed(0) + "%",
+          host.cpu_pct >= 50,
+          host.cpu_pct >= 85,
+          "Host CPU (not iowait)"
+        ));
+      }
+      if (host.iowait_pct != null) {
+        items.push(metric(
+          "iowait " + host.iowait_pct.toFixed(0) + "%",
+          host.iowait_pct >= 8,
+          host.iowait_pct >= 20,
+          "CPU waiting on disk"
+        ));
+      }
+      if (host.mem) {
+        items.push(metric(
+          "RAM " + host.mem.pct.toFixed(0) + "%",
+          host.mem.pct >= 80,
+          host.mem.available < 1.5 * 1073741824,
+          fmtGiB(host.mem.used) + " used / " + fmtGiB(host.mem.total)
+        ));
+      }
+      if (host.root) {
+        items.push(metric(
+          "SSD " + host.root.pct.toFixed(0) + "%",
+          host.root.pct >= 80,
+          host.root.pct >= 90,
+          fmtGiB(host.root.used) + " / " + fmtGiB(host.root.total) + " on /"
+        ));
+      }
+      if (host.usb) {
+        const io = host.usb_io;
+        const extra = io ? " · " + fmtRate(io.read_kbs) + " r · " + io.util.toFixed(0) + "% util" : "";
+        items.push(metric(
+          "USB " + host.usb.pct.toFixed(0) + "%" + extra,
+          (io && io.util >= 25) || host.usb.pct >= 80,
+          (io && io.util >= 60) || host.usb.pct >= 90,
+          fmtGiB(host.usb.used) + " / " + fmtGiB(host.usb.total) + " media disk"
+        ));
+      }
+      if (host.streams != null) {
+        items.push(metric(
+          "streams " + host.streams,
+          false,
+          false,
+          "Active Plex streams"
+        ));
+      }
+      metricsEl.innerHTML = items.join("");
+    }
+
+    async function refreshHealth() {
+      try {
+        const h = await (await fetch("/api/health")).json();
+        const items = h.stack || [
+          {id: "plex", label: "Plex", ok: !!h.plex},
+          {id: "vpn", label: "VPN", ok: !!h.vpn},
+          {id: "qbit", label: "qBit", ok: !!h.qbit},
+          {id: "llm", label: "LLM", ok: !!(h.model_ready || h.ollama)},
+          {id: "organize", label: "File", ok: !!h.organize, busy: !!h.organize_busy}
+        ];
+        const pending = (h.organize_pending || []).map(j => j.name).filter(Boolean);
+        const filing = pending.length
+          ? "Filing " + pending.slice(0, 3).join(", ")
+          : "";
+        const detail = {
+          plex: h.plex ? "Plex reachable" : "Plex unreachable",
+          vpn: h.vpn ? "Gluetun up" : "Gluetun down",
+          qbit: h.qbit ? "qBittorrent API up" : "qBittorrent down",
+          llm: h.model_ready ? h.model : (h.ollama ? "model loading" : "Ollama down"),
+          organize: h.organize
+            ? (filing || "Filer idle")
+            : (h.organize_error || "Filer unreachable")
+        };
+        healthEl.innerHTML = items.map(item => chip(item.label, item.ok, detail[item.id], item.busy || (item.id === "organize" && h.organize_busy))).join("");
+        renderHost(h);
+      } catch {
+        healthEl.innerHTML = chip("chat", false, "agent unreachable");
+        if (metricsEl) metricsEl.innerHTML = "";
+      }
+    }
+
+    function renderSuggestions(results) {
+      if (!Array.isArray(results) || !results.length) return "";
+      return `<div class="picks">${results.map(r => `
+        <button class="suggest" type="button" data-title="${escapeHtml(r && r.title)}" data-year="${escapeHtml(r && r.year)}">
+          ${escapeHtml(r && r.title)}
+          <small>${escapeHtml(r && r.year)} · ${Number(r && r.rating).toFixed(1)} on IMDb</small>
+        </button>`).join("")}</div>`;
+    }
+
+    function renderPicks(results) {
+      if (!Array.isArray(results) || !results.length) return "";
+      return `<div class="picks">${results.map(r => `
+        <button class="pick" data-id="${escapeHtml(r && r.id)}">
+          ${escapeHtml(r && r.name)}
+          <small>${Number(r && r.seeds) || 0} seeds · ${escapeHtml(r && r.size_label)} · ${escapeHtml(host(r && r.site))}</small>
+        </button>`).join("")}</div>`;
+    }
+
+    function renderSearchReply(data) {
+      let summary = String(data.reply || "");
+      const quip = String(data.quip || "");
+      if (quip) {
+        const tail = "\n" + quip;
+        if (summary.endsWith(tail)) summary = summary.slice(0, -tail.length);
+        else if (summary.endsWith(quip)) summary = summary.slice(0, -quip.length).replace(/\n+$/, "");
+      }
+      const quipHtml = quip ? `<div class="quip">${escapeHtml(quip)}</div>` : "";
+      const list = data.kind === "suggest"
+        ? renderSuggestions(data.results || [])
+        : renderPicks(data.results || []);
+      return escapeHtml(summary) + list + quipHtml;
+    }
+
+    function host(url) {
+      try { return new URL(url).hostname; } catch { return url || "indexer"; }
+    }
+
+    function escapeHtml(s) {
+      return String(s || "").replace(/[&<>"']/g, c => ({
+        "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"
+      }[c]));
+    }
+
+    function statusInner(s) {
+      const pct = Math.max(0, Math.min(100, (s.progress || 0) * 100));
+      const done = s.eta === "done";
+      const speed = s.speed_label ? ` · ${escapeHtml(s.speed_label)}` : "";
+      return `<strong>${escapeHtml(s.name || "Starting…")}</strong>
+        <div class="bar"><span style="width:${pct}%"></span></div>
+        <small class="${done ? "ok" : ""}">${escapeHtml(s.progress_pct)} · ${escapeHtml(s.eta)} · ${escapeHtml(s.state)}${speed}</small>`;
+    }
+
+    function statusCard(s) {
+      return `<div class="status" data-hash="${escapeHtml(s.hash)}">${statusInner(s)}</div>`;
+    }
+
+    async function startPoll(el) {
+      const box = el.querySelector(".status");
+      const hash = box && box.dataset.hash;
+      if (!hash) return;
+      if (polls.has(hash)) clearInterval(polls.get(hash));
+      const tick = async () => {
+        try {
+          const s = await (await fetch("/api/status?hash=" + encodeURIComponent(hash))).json();
+          const next = el.querySelector(".status");
+          if (next) next.outerHTML = statusCard(s);
+          if (s.eta === "done") {
+            clearInterval(polls.get(hash));
+            polls.delete(hash);
+            refreshDownloads();
+            refreshLibrary();
+          }
+        } catch {}
+      };
+      polls.set(hash, setInterval(tick, 3000));
+    }
+
+    async function refreshDownloads() {
+      try {
+        const data = await (await fetch("/api/downloads")).json();
+        const items = data.items || [];
+        const filing = data.filing || [];
+        const bits = [];
+        if (items.length) bits.push(`${items.length} in qBittorrent`);
+        if (filing.length) bits.push(`filing ${filing.length}`);
+        dlMeta.textContent = bits.join(" · ") || "Nothing downloading";
+        const rows = [
+          ...items.map(s => `<div class="dl-item" data-hash="${escapeHtml(s.hash)}">${statusInner(s)}</div>`),
+          ...filing.map(j => `<div class="dl-item"><strong>${escapeHtml(j.name)}</strong><small>Filing into ${escapeHtml(j.kind === "tv" ? "TV" : "Movies")}</small></div>`)
+        ];
+        dlList.innerHTML = rows.length
+          ? rows.join("")
+          : `<div class="empty">Queue a title from chat.</div>`;
+        if (queueCount) {
+          const n = items.length + filing.length;
+          queueCount.hidden = n === 0;
+          queueCount.textContent = n ? String(n) : "";
+        }
+      } catch {
+        dlMeta.textContent = "qBittorrent unavailable";
+        dlList.innerHTML = `<div class="empty">Could not read downloads.</div>`;
+        if (queueCount) {
+          queueCount.hidden = true;
+          queueCount.textContent = "";
+        }
+      }
+    }
+
+    function labelItem(item) {
+      const bits = [];
+      if (item.year) bits.push(String(item.year));
+      if (item.seasons) bits.push(item.seasons + (item.seasons === 1 ? " season" : " seasons"));
+      const extra = bits.length ? `<small>${escapeHtml(bits.join(" · "))}</small>` : "";
+      return `<button class="inv-item" type="button" data-title="${escapeHtml(item.title)}"><span class="title">${escapeHtml(item.title)}</span>${extra}</button>`;
+    }
+
+    function visible(items, q) {
+      if (!q) return items;
+      return items.filter(item => item.title.toLowerCase().includes(q));
+    }
+
+    function renderLibrary() {
+      const q = (invFilter.value || "").trim().toLowerCase();
+      const movies = visible(library.movies || [], q);
+      const shows = visible(library.shows || [], q);
+      movieCount.textContent = movies.length ? `(${movies.length})` : "";
+      showCount.textContent = shows.length ? `(${shows.length})` : "";
+      movieList.innerHTML = movies.length
+        ? movies.map(labelItem).join("")
+        : `<div class="empty">${library.ok === false ? "Unavailable" : "None"}</div>`;
+      showList.innerHTML = shows.length
+        ? shows.map(labelItem).join("")
+        : `<div class="empty">${library.ok === false ? "Unavailable" : "None"}</div>`;
+    }
+
+    async function refreshLibrary() {
+      try {
+        const data = await (await fetch("/api/library")).json();
+        library = data;
+        if (data.ok) {
+          invMeta.textContent = `${data.movie_count} movies · ${data.show_count} shows`;
+        } else {
+          invMeta.textContent = data.error || "Library unavailable";
+        }
+        renderLibrary();
+      } catch {
+        invMeta.textContent = "Library unavailable";
+        library = { ok: false, movies: [], shows: [] };
+        renderLibrary();
+      }
+    }
+
+    log.addEventListener("click", async (ev) => {
+      const suggest = ev.target.closest("button.suggest");
+      if (suggest) {
+        const title = suggest.dataset.title || "";
+        const year = suggest.dataset.year || "";
+        input.value = year ? `${title} (${year})` : title;
+        form.requestSubmit();
+        return;
+      }
+      const btn = ev.target.closest("button.pick");
+      if (!btn) return;
+      btn.disabled = true;
+      const wait = add("bot", `<div class="bubble">Starting download…</div>`);
+      try {
+        const s = await (await fetch("/api/download", {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({id: btn.dataset.id})
+        })).json();
+        if (s.detail) throw new Error(s.detail);
+        const lead = s.already ? "Already in qBittorrent." : "Queued in qBittorrent.";
+        fillBubble(wait, lead + statusCard(s));
+        startPoll(wait);
+        refreshDownloads();
+      } catch (err) {
+        fillBubble(wait, `<span class="err">${escapeHtml(err.message)}</span>`);
+      }
+    });
+
+    form.addEventListener("submit", async (ev) => {
+      ev.preventDefault();
+      const text = input.value.trim();
+      if (!text) return;
+      input.value = "";
+      add("user", `<div class="bubble">${escapeHtml(text)}</div>`);
+      const wait = add("bot", `<div class="bubble">Asking the local model, then searching qBit…</div>`);
+      const bubble = wait.querySelector(".bubble") || wait;
+      const ac = new AbortController();
+      const timer = setTimeout(() => ac.abort(), 50000);
+      try {
+        const resp = await fetch("/api/chat", {
+          method: "POST",
+          credentials: "include",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({message: text}),
+          signal: ac.signal
+        });
+        const data = await resp.json().catch(() => null);
+        if (!resp.ok) throw new Error(errorDetail(data, resp.status));
+        if (!data || typeof data !== "object") throw new Error("search returned invalid JSON");
+        let html;
+        try {
+          html = renderSearchReply(data);
+        } catch (err) {
+          html = `<span class="err">${escapeHtml(err.message || "could not render results")}</span>`;
+        }
+        fillBubble(bubble, html);
+      } catch (err) {
+        const msg = err && err.name === "AbortError"
+          ? "Search timed out. Try again."
+          : ((err && err.message) || String(err) || "search failed");
+        fillBubble(bubble, `<span class="err">${escapeHtml(msg)}</span>`);
+      } finally {
+        clearTimeout(timer);
+      }
+    });
+
+    document.querySelector(".inventory").addEventListener("click", (ev) => {
+      const btn = ev.target.closest(".inv-item");
+      if (!btn) return;
+      input.value = btn.dataset.title || "";
+      setTab("chat");
+      input.focus();
+    });
+    invFilter.addEventListener("input", renderLibrary);
+
+    add("bot", `<div class="bubble">Ask me for a TV show or Movie &amp; I will find and download to the Plex server for you to watch</div>`);
+    refreshHealth();
+    refreshDownloads();
+    refreshLibrary();
+    setInterval(refreshHealth, 5000);
+    setInterval(refreshDownloads, 3000);
+    setInterval(refreshLibrary, 60000);
+  </script>
+</body>
+</html>
