@@ -3,15 +3,36 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import time
 from pathlib import Path
 
-SEASON = Path("/mnt/usbdrive/TV/Criminal Minds (2005)/Season 13")
-HOST_TV = Path("/mnt/usbdrive/TV")
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def _load_dotenv() -> None:
+    env_path = ROOT / ".env"
+    if not env_path.is_file():
+        return
+    for raw in env_path.read_text().splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        os.environ.setdefault(key.strip(), value.strip())
+
+
+_load_dotenv()
+_media = os.environ.get("MEDIA_ROOT", "")
+_config = os.environ.get("CONFIG_ROOT", "")
+if not _media or not _config:
+    raise SystemExit("Set MEDIA_ROOT and CONFIG_ROOT in .env")
+HOST_TV = Path(_media) / "TV"
+SEASON = HOST_TV / "Criminal Minds (2005)" / "Season 13"
 CT_TV = Path("/tv")
-TMP_DIR = Path("/home/klg/bazarr/config/s13-tmp")
+TMP_DIR = Path(_config) / "bazarr" / "config" / "s13-tmp"
 CT_TMP = Path("/config/s13-tmp")
 
 

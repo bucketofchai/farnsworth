@@ -57,7 +57,7 @@ def http(method: str, url: str, headers: dict) -> tuple[int, object]:
 
 def main() -> None:
     load_dotenv()
-    lan = os.environ.get("LAN_IP", "192.168.1.8")
+    lan = os.environ["LAN_IP"]
     yaml = Path(os.environ["BAZARR_CONFIG"]) / "config" / "config.yaml"
     if not yaml.is_file():
         yaml = Path(os.environ["BAZARR_CONFIG"]) / "config.yaml"

@@ -1,4 +1,4 @@
-# Copied to /home/klg/gluetun/auth/config.toml on puck (not committed).
+# Copied to $GLUETUN_CONFIG/auth/config.toml by scripts/install.sh (not committed).
 # HTTP basic auth for Gluetun's control server (VPN status for plex-chat).
 
 [[roles]]

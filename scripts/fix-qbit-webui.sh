@@ -1,9 +1,16 @@
 #!/usr/bin/env bash
 # Restore qBittorrent WebUI access behind Gluetun.
 # qBittorrent splits ServerDomains on ';' not ','. Host-header checks also
-# reject the LAN IP because qBit sees Gluetun's addresses, not 192.168.1.8.
+# reject the LAN address because qBit sees Gluetun's addresses, not LAN_IP.
 set -euo pipefail
-CONF="${QBIT_CONF:-/home/klg/qbittorrent/config/qBittorrent/qBittorrent.conf}"
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+set -a
+# shellcheck disable=SC1091
+source "$ROOT/.env"
+set +a
+
+CONF="${QBIT_CONF:-$QBIT_CONFIG/qBittorrent/qBittorrent.conf}"
 docker stop qbittorrent
 python3 - <<PY
 from pathlib import Path

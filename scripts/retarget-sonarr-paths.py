@@ -100,8 +100,8 @@ def match_folder(title: str, year: int | None, folders: list[str]) -> str | None
 
 def main() -> None:
     load_dotenv()
-    lan = os.environ.get("LAN_IP", "192.168.1.8")
-    tv_root = Path("/mnt/usbdrive/TV")
+    lan = os.environ["LAN_IP"]
+    tv_root = Path(os.environ["MEDIA_ROOT"]) / "TV"
     sonarr_xml = Path(os.environ["SONARR_CONFIG"]) / "config.xml"
     baz_yaml = Path(os.environ["BAZARR_CONFIG"]) / "config" / "config.yaml"
     if not baz_yaml.is_file():

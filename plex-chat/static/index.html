@@ -135,6 +135,12 @@
       font-size: 0.7rem;
       font-variant-numeric: tabular-nums;
     }
+    .daily {
+      color: var(--muted);
+      font-size: 0.72rem;
+      text-align: right;
+      max-width: 42rem;
+    }
     .metric { white-space: nowrap; }
     .metric.warn { color: #d97706; }
     .metric.hot { color: var(--bad); }
@@ -420,7 +426,7 @@
       h1 { font-size: 1.35rem; }
       .logo { width: 36px; height: 36px; }
       .status-line { align-items: stretch; }
-      .health, .metrics {
+      .health, .metrics, .daily {
         justify-content: flex-start;
         flex-wrap: nowrap;
         overflow-x: auto;
@@ -526,6 +532,7 @@
       </div>
       <div class="status-line">
         <div class="health" id="health">checking…</div>
+        <div class="daily" id="daily" hidden></div>
         <div class="metrics" id="metrics"></div>
       </div>
     </header>
@@ -723,6 +730,30 @@
       metricsEl.innerHTML = items.join("");
     }
 
+    const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+    function formatPickDay(iso) {
+      const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso || "");
+      if (!match) return iso || "";
+      const month = MONTHS[Number(match[2]) - 1];
+      if (!month) return iso;
+      return `${month} ${Number(match[3])}`;
+    }
+
+    function renderDaily(report) {
+      const el = document.getElementById("daily");
+      if (!el) return;
+      const picks = (report && report.picks) || [];
+      if (!report || !report.day || !picks.length) {
+        el.hidden = true;
+        el.textContent = "";
+        return;
+      }
+      const bits = picks.map(pick => `${pick.title} (${pick.status || "unknown"})`);
+      el.hidden = false;
+      el.textContent = `Last pick ${formatPickDay(report.day)}: ${bits.join(", ")}`;
+    }
+
     async function refreshHealth() {
       try {
         const h = await (await fetch("/api/health")).json();
@@ -748,9 +779,16 @@
         };
         healthEl.innerHTML = items.map(item => chip(item.label, item.ok, detail[item.id], item.busy || (item.id === "organize" && h.organize_busy))).join("");
         renderHost(h);
+        try {
+          const daily = await (await fetch("/api/imdb-daily")).json();
+          renderDaily(daily);
+        } catch {
+          renderDaily(null);
+        }
       } catch {
         healthEl.innerHTML = chip("chat", false, "agent unreachable");
         if (metricsEl) metricsEl.innerHTML = "";
+        renderDaily(null);
       }
     }
 

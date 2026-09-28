@@ -75,6 +75,10 @@ def test_run_window_is_midnight_to_6am():
     assert imdb_daily.seconds_until_window(evening) == 4 * 3600 + 60
     assert imdb_daily.seconds_until_window(midnight) == 0
     assert imdb_daily.seconds_until_next_midnight(just_before_six) > 18 * 3600
+    assert imdb_daily.loop_action(midnight) == "pick"
+    assert imdb_daily.loop_action(just_before_six) == "pick"
+    assert imdb_daily.loop_action(six) == "warm"
+    assert imdb_daily.loop_action(evening) == "warm"
 
 
 def test_filename_year():
@@ -83,10 +87,63 @@ def test_filename_year():
     assert not imdb_daily.filename_has_year("Movie 1080p", 1080)
 
 
+def test_catalog_round_trip_keeps_mean_and_vote_floor():
+    import gzip
+    import tempfile
+
+    import imdb_catalog
+
+    basics_header = [
+        "tconst", "titleType", "primaryTitle", "startYear",
+        "runtimeMinutes", "genres", "isAdult",
+    ]
+    ratings_header = ["tconst", "averageRating", "numVotes"]
+    basics_rows = [
+        ["ttlow", "movie", "Quiet", "1990", "100", "Drama", "0"],
+        ["tthigh", "movie", "Loud", "2020", "110", "Comedy", "0"],
+        ["ttdoc", "movie", "Doc", "2010", "90", "Documentary", "0"],
+        ["ttshort", "movie", "Short", "2000", "20", "Drama", "0"],
+        ["ttshow", "tvSeries", "Show", "2024", "40", "Comedy", "0"],
+    ]
+    ratings_rows = [
+        ["ttlow", "8.0", "1000"],
+        ["tthigh", "9.0", "30000"],
+        ["ttdoc", "9.9", "5000"],
+        ["ttshort", "9.9", "5000"],
+        ["ttshow", "8.5", "30000"],
+    ]
+
+    def write_tsv(path: Path, header: list[str], rows: list[list[str]]) -> None:
+        text = "\n".join(["\t".join(header)] + ["\t".join(row) for row in rows]) + "\n"
+        path.write_bytes(gzip.compress(text.encode()))
+
+    with tempfile.TemporaryDirectory() as tmp:
+        cache = Path(tmp)
+        basics = cache / "title.basics.tsv.gz"
+        ratings = cache / "title.ratings.tsv.gz"
+        write_tsv(basics, basics_header, basics_rows)
+        write_tsv(ratings, ratings_header, ratings_rows)
+        built = imdb_catalog.build_catalog(basics, ratings)
+        dest = imdb_catalog.catalog_path(cache)
+        imdb_catalog.write_catalog(dest, built)
+        loaded = imdb_catalog.read_catalog(dest)
+        assert loaded is not None
+        assert loaded["mean"] == 8.5
+        assert imdb_catalog.matches_dumps(loaded, basics, ratings)
+        stored = {row["id"] for row in loaded["titles"]}
+        assert stored == {"tthigh", "ttshow"}
+        chart = imdb_daily.top250_from_catalog(loaded["titles"], loaded["mean"])
+        assert [row["id"] for row in chart] == ["tthigh"]
+        again = imdb_catalog.ensure_catalog(cache)
+        assert again["mean"] == loaded["mean"]
+        assert len(list(cache.glob("catalog.json.tmp"))) == 0
+
+
 if __name__ == "__main__":
     test_parse_chart_html()
     test_top250_skips_docs_shorts_and_low_votes()
     test_choose_is_stable_and_skips_owned_and_queued()
     test_run_window_is_midnight_to_6am()
     test_filename_year()
+    test_catalog_round_trip_keeps_mean_and_vote_floor()
     print("ok")

@@ -308,7 +308,7 @@ def configure_bazarr(bazarr_url: str, baz_key: str, sonarr_key: str, radarr_key:
 
 def main() -> None:
     load_dotenv()
-    lan = os.environ.get("LAN_IP", "192.168.1.8")
+    lan = os.environ["LAN_IP"]
     sonarr_xml = Path(os.environ["SONARR_CONFIG"]) / "config.xml"
     radarr_xml = Path(os.environ["RADARR_CONFIG"]) / "config.xml"
     bazarr_yaml = Path(os.environ["BAZARR_CONFIG"]) / "config" / "config.yaml"
@@ -335,10 +335,11 @@ def main() -> None:
 
     add_root(sonarr, sonarr_key, "/tv")
     add_root(radarr, radarr_key, "/movies")
-    print("Importing Sonarr series from /mnt/usbdrive/TV")
-    n_s = import_sonarr(sonarr, sonarr_key, Path("/mnt/usbdrive/TV"))
-    print("Importing Radarr movies from /mnt/usbdrive/Movies")
-    n_m = import_radarr(radarr, radarr_key, Path("/mnt/usbdrive/Movies"))
+    media = os.environ["MEDIA_ROOT"]
+    print(f"Importing Sonarr series from {media}/TV")
+    n_s = import_sonarr(sonarr, sonarr_key, Path(media) / "TV")
+    print(f"Importing Radarr movies from {media}/Movies")
+    n_m = import_radarr(radarr, radarr_key, Path(media) / "Movies")
     print(f"added series={n_s} movies={n_m}")
 
     baz_key = None

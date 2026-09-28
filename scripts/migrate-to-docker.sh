@@ -14,13 +14,14 @@ if [[ "${EUID}" -ne 0 ]]; then
   exit 1
 fi
 
-if [[ "$(hostname -s)" != "puck" ]]; then
-  echo "This script must run on puck (hostname is $(hostname -s))." >&2
-  echo "From this computer: ssh -t klg@puck 'sudo $REMOTE_DIR/scripts/migrate-to-docker.sh'" >&2
+# Set INSTALL_HOST in .env to refuse running this migration on any other machine.
+if [[ -n "${INSTALL_HOST:-}" && "$(hostname -s)" != "$INSTALL_HOST" ]]; then
+  echo "This script must run on $INSTALL_HOST (hostname is $(hostname -s))." >&2
+  echo "From another machine: ssh -t ${REMOTE} 'sudo ${REMOTE_DIR}/scripts/migrate-to-docker.sh'" >&2
   exit 1
 fi
 
-USB_MOUNT="/mnt/usbdrive"
+USB_MOUNT="${MEDIA_ROOT:?Set MEDIA_ROOT in .env}"
 CONFIG="${PLEX_CONFIG:-/var/lib/plexmediaserver}"
 COMPOSE=(docker compose --project-directory "$ROOT" -f "$ROOT/docker-compose.yml")
 
@@ -38,7 +39,7 @@ mount_usbdrive() {
   if [[ -n "$uuid" ]]; then
     if ! grep -q "$uuid" /etc/fstab; then
       # Replace the incomplete /dev/sdb1 fstab line so the 5.5T disk remounts on boot.
-      sed -i.bak '/[[:space:]]\/mnt\/usbdrive[[:space:]]/d' /etc/fstab
+      sed -i.bak "\#[[:space:]]${USB_MOUNT}[[:space:]]#d" /etc/fstab
       echo "UUID=$uuid $USB_MOUNT $fstype defaults,nofail 0 2" >> /etc/fstab
       echo "Updated /etc/fstab for $USB_MOUNT (backup: /etc/fstab.bak)"
     fi
@@ -67,8 +68,8 @@ if ! command -v docker >/dev/null || ! docker compose version >/dev/null; then
   exit 1
 fi
 
-if getent group docker >/dev/null; then
-  usermod -aG docker klg || true
+if [[ -n "${SUDO_USER:-}" ]] && getent group docker >/dev/null; then
+  usermod -aG docker "$SUDO_USER" || true
 fi
 
 echo "==> Stopping native plexmediaserver"
@@ -104,5 +105,5 @@ if [[ "$ok" -ne 1 ]]; then
 fi
 
 echo
-echo "Migration complete. Web UI: http://192.168.1.8:32400/web"
+echo "Migration complete. Web UI: http://${LAN_IP}:32400/web"
 echo "Rollback: sudo $ROOT/scripts/rollback-to-native.sh"

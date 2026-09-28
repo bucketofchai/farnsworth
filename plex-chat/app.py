@@ -22,6 +22,8 @@ from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+import imdb_catalog
+
 QBIT_URL = os.environ.get("QBIT_URL", "http://127.0.0.1:18081").rstrip("/")
 OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://127.0.0.1:11434").rstrip("/")
 OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen2.5:1.5b")
@@ -169,6 +171,9 @@ _GENRE_INDEX: list[dict] | None = None
 _GENRE_MTIME: tuple[float, float] | None = None
 
 RESULTS: dict[str, dict] = {}
+PICK_TTL_SEC = 30 * 60
+PICK_MAX = 48
+_RESULTS_LOCK = threading.Lock()
 CHAT_USER = os.environ.get("PLEX_CHAT_USER", "").strip()
 CHAT_PASS = os.environ.get("PLEX_CHAT_PASSWORD", "")
 
@@ -193,8 +198,6 @@ def _basic_ok(header: str) -> bool:
 
 @app.middleware("http")
 async def require_basic_auth(request, call_next):
-    if request.url.path == "/api/health":
-        return await call_next(request)
     if _basic_ok(request.headers.get("authorization") or ""):
         return await call_next(request)
     return Response(
@@ -332,14 +335,18 @@ def rank_genre_rows(
         if _title_key(str(row.get("title") or "")) in owned:
             continue
         matched.append(row)
-    matched.sort(
-        key=lambda row: (
+    def _rank_key(row: dict) -> tuple:
+        genres = row.get("genres") or ()
+        primary = 0 if genres and genres[0] == genre else 1
+        return (
+            primary,
             -int(row["year"]),
             -float(row["rating"]),
             -int(row["votes"]),
             str(row["title"]).lower(),
         )
-    )
+
+    matched.sort(key=_rank_key)
     return matched[: max(0, limit)]
 
 
@@ -405,13 +412,23 @@ def load_genre_index() -> list[dict]:
     ratings = IMDB_DATA_DIR / "title.ratings.tsv.gz"
     if not basics.is_file() or not ratings.is_file():
         raise FileNotFoundError(f"IMDb datasets missing in {IMDB_DATA_DIR}")
-    mtime = (basics.stat().st_mtime, ratings.stat().st_mtime)
+    catalog_file = imdb_catalog.catalog_path(IMDB_DATA_DIR)
+    catalog = imdb_catalog.read_catalog(catalog_file)
+    use_catalog = catalog is not None and imdb_catalog.matches_dumps(catalog, basics, ratings)
+    if use_catalog:
+        stamp: tuple = ("catalog", catalog_file.stat().st_mtime_ns)
+    else:
+        stamp = ("tsv", basics.stat().st_mtime_ns, ratings.stat().st_mtime_ns)
     with _GENRE_LOCK:
-        if _GENRE_INDEX is not None and _GENRE_MTIME == mtime:
+        if _GENRE_INDEX is not None and _GENRE_MTIME == stamp:
             return _GENRE_INDEX
-        index = _build_genre_index(basics, ratings)
+        if use_catalog and catalog is not None:
+            index = imdb_catalog.genre_rows(catalog, GENRE_MIN_RATING)
+            print(f"imdb genre index: {len(index)} titles from catalog", flush=True)
+        else:
+            index = _build_genre_index(basics, ratings)
         _GENRE_INDEX = index
-        _GENRE_MTIME = mtime
+        _GENRE_MTIME = stamp
         return index
 
 
@@ -552,10 +569,18 @@ def norm_name(name: str) -> str:
     return re.sub(r"\s+", " ", cleaned).strip()
 
 
+YEAR_MIN = 1900
+YEAR_MAX = 2035
+
+
+def _year_ok(year: int) -> bool:
+    return YEAR_MIN <= year <= YEAR_MAX
+
+
 def extract_year(text: str) -> int | None:
     for match in YEAR_TOKEN_RE.finditer(text or ""):
         year = int(match.group(1))
-        if 1950 <= year <= 2035:
+        if _year_ok(year):
             return year
     return None
 
@@ -564,7 +589,7 @@ def years_in(text: str) -> list[int]:
     out = []
     for match in YEAR_TOKEN_RE.finditer(text or ""):
         year = int(match.group(1))
-        if 1950 <= year <= 2035:
+        if _year_ok(year):
             out.append(year)
     return out
 
@@ -931,10 +956,35 @@ def top_unique(
         key=lambda row: (row["year_delta"], -row["seeds"], row["name"].lower()),
     )
     chosen = ranked[:3]
-    RESULTS.clear()
-    for row in chosen:
-        RESULTS[row["id"]] = row
-    return [{k: v for k, v in row.items() if k != "url"} for row in chosen]
+    _remember_picks(chosen)
+    hidden = {"url", "saved_at"}
+    return [{k: v for k, v in row.items() if k not in hidden} for row in chosen]
+
+
+def _prune_results(now: float | None = None) -> None:
+    now = time.time() if now is None else now
+    expired = [
+        key
+        for key, row in RESULTS.items()
+        if now - float(row.get("saved_at") or 0) > PICK_TTL_SEC
+    ]
+    for key in expired:
+        RESULTS.pop(key, None)
+    overflow = len(RESULTS) - PICK_MAX
+    if overflow <= 0:
+        return
+    oldest = sorted(RESULTS.items(), key=lambda item: float(item[1].get("saved_at") or 0))
+    for key, _row in oldest[:overflow]:
+        RESULTS.pop(key, None)
+
+
+def _remember_picks(chosen: list[dict]) -> None:
+    now = time.time()
+    with _RESULTS_LOCK:
+        _prune_results(now)
+        for row in chosen:
+            row["saved_at"] = now
+            RESULTS[row["id"]] = row
 
 
 @app.get("/")
@@ -1342,10 +1392,12 @@ def chat(body: ChatIn) -> dict:
 
 @app.post("/api/download")
 def download(body: DownloadIn) -> dict:
-    item = RESULTS.get(body.id)
+    with _RESULTS_LOCK:
+        _prune_results()
+        item = RESULTS.get(body.id)
     if not item:
         raise HTTPException(status_code=404, detail="That pick expired. Search again.")
-    existing = _find_torrent(item["name"], item["url"], fallback_latest=False)
+    existing = _find_torrent(item["name"], item["url"])
     if existing:
         payload = _status_payload(existing)
         payload["already"] = True
@@ -1356,7 +1408,7 @@ def download(body: DownloadIn) -> dict:
         data["category"] = mapped
     code, text = qbit("POST", "/api/v2/torrents/add", data, timeout=30)
     if code == 409:
-        info = _find_torrent(item["name"], item["url"], fallback_latest=False)
+        info = _find_torrent(item["name"], item["url"])
         if not info:
             raise HTTPException(
                 status_code=409,
@@ -1367,8 +1419,7 @@ def download(body: DownloadIn) -> dict:
         return payload
     if code != 200:
         raise HTTPException(status_code=502, detail=f"qBit add failed ({code}): {text[:200]}")
-    time.sleep(1.2)
-    info = _find_torrent(item["name"], item["url"], fallback_latest=True)
+    info = _await_torrent(item["name"], item["url"])
     if not info:
         return {
             "hash": "",
@@ -1424,7 +1475,17 @@ def status(hash: str = "") -> dict:
     return _status_payload(rows[0])
 
 
-def _find_torrent(name: str, url: str, fallback_latest: bool = True) -> dict | None:
+def _await_torrent(name: str, url: str, tries: int = 4, pause: float = 0.4) -> dict | None:
+    for attempt in range(max(1, tries)):
+        if attempt:
+            time.sleep(pause)
+        info = _find_torrent(name, url)
+        if info:
+            return info
+    return None
+
+
+def _find_torrent(name: str, url: str) -> dict | None:
     code, text = qbit("GET", "/api/v2/torrents/info", timeout=15)
     if code != 200:
         return None
@@ -1440,8 +1501,6 @@ def _find_torrent(name: str, url: str, fallback_latest: bool = True) -> dict | N
             return row
         if want and norm_name(str(row.get("name") or "")) == want:
             return row
-    if fallback_latest:
-        return rows[-1] if rows else None
     return None
 
 
@@ -1586,7 +1645,61 @@ def collect_library() -> dict:
     }
 
 
-if __name__ == "__main__":
+def latest_daily_report() -> dict | None:
+    path = IMDB_DATA_DIR / "state.json"
+    try:
+        data = json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError):
+        return None
+    days = data.get("days") if isinstance(data, dict) else None
+    if not isinstance(days, dict) or not days:
+        return None
+    day = max(str(key) for key in days)
+    rows = days.get(day) or []
+    if not isinstance(rows, list) or not rows:
+        return None
+    picks = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        title = str(row.get("title") or "").strip()
+        if not title:
+            continue
+        picks.append(
+            {
+                "title": title,
+                "year": row.get("year"),
+                "status": str(row.get("status") or ""),
+            }
+        )
+    if not picks:
+        return None
+    return {"day": day, "picks": picks}
+
+
+@app.get("/api/imdb-daily")
+def imdb_daily_report() -> dict:
+    report = latest_daily_report()
+    if not report:
+        return {"ok": True, "day": "", "picks": []}
+    return {"ok": True, "day": report["day"], "picks": report["picks"]}
+
+
+def _serve() -> None:
     import uvicorn
 
-    uvicorn.run(app, host="0.0.0.0", port=int(os.environ.get("PORT", "7680")))
+    port = int(os.environ.get("PORT", "7680"))
+    lan = os.environ.get("PLEX_CHAT_BIND", "127.0.0.1").strip() or "127.0.0.1"
+
+    def run(host: str) -> None:
+        uvicorn.run(app, host=host, port=port, log_level="info")
+
+    if lan != "127.0.0.1":
+        threading.Thread(
+            target=run, args=("127.0.0.1",), daemon=True, name="chat-loopback"
+        ).start()
+    run(lan)
+
+
+if __name__ == "__main__":
+    _serve()

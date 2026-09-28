@@ -1,8 +1,14 @@
 #!/usr/bin/env bash
-# Install qBittorrent search engines into the linuxserver config dir on this host.
+# Install qBittorrent search engines into the config directory from .env.
 set -euo pipefail
 
-ENG="${QBIT_ENGINES:-/home/klg/qbittorrent/config/qBittorrent/nova3/engines}"
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+set -a
+# shellcheck disable=SC1091
+source "$ROOT/.env"
+set +a
+
+ENG="${QBIT_ENGINES:-$QBIT_CONFIG/qBittorrent/nova3/engines}"
 mkdir -p "$ENG"
 
 fetch() {

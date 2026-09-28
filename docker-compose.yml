@@ -1,5 +1,5 @@
-# linuxserver/plex on puck. Host networking keeps clients on 192.168.1.8:32400.
-# Media bind-mounts keep the native library paths so metadata does not need remapping.
+# linuxserver/plex. Host networking keeps clients on ${LAN_IP}:32400.
+# Media bind-mounts use MEDIA_ROOT on both sides so Plex library paths stay stable.
 #
 # qBittorrent shares Gluetun's network namespace (Proton VPN kill switch).
 # If the tunnel is down, qBittorrent has no network. Do not publish torrent
@@ -7,7 +7,8 @@
 #
 # plex-qbit throttles qBittorrent while Plex is streaming (alt speed limits).
 # qbit-organize files finished torrents into TV/Movies, names them for Plex, and
-# drops them from seeding. plex-chat is host-networked like Plex (localhost + LAN :7680).
+# drops them from seeding. plex-chat is host-networked and listens on LAN_IP and
+# 127.0.0.1 only. Set EXTRA_CIDRS in .env when a second subnet should stay off that port.
 # imdb-daily picks 3 IMDb Top 250 movies between midnight and 6am and queues them in qBit.
 # Grafana + VictoriaMetrics + VictoriaLogs replace Elastic/Kibana (LAN :3000).
 # Admin UIs bind LAN_IP only (not 0.0.0.0 / [::]). Images are pinned by digest.
@@ -25,8 +26,8 @@ services:
       - /dev/dri:/dev/dri
     volumes:
       - ${PLEX_CONFIG}:/config
-      - /mnt/usbdrive/TV:/mnt/usbdrive/TV
-      - /mnt/usbdrive/Movies:/mnt/usbdrive/Movies
+      - ${MEDIA_ROOT}/TV:${MEDIA_ROOT}/TV
+      - ${MEDIA_ROOT}/Movies:${MEDIA_ROOT}/Movies
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
@@ -51,11 +52,11 @@ services:
     environment:
       VPN_SERVICE_PROVIDER: protonvpn
       VPN_TYPE: wireguard
-      SERVER_COUNTRIES: Switzerland
+      SERVER_COUNTRIES: ${VPN_COUNTRY}
       PORT_FORWARD_ONLY: "on"
       VPN_PORT_FORWARDING: "on"
       FIREWALL_INPUT_PORTS: ${QBIT_WEBUI_PORT},8000,18081
-      FIREWALL_OUTBOUND_SUBNETS: 192.168.1.0/24,10.127.1.0/24,172.16.0.0/12
+      FIREWALL_OUTBOUND_SUBNETS: ${FIREWALL_OUTBOUND_SUBNETS}
       HTTP_CONTROL_SERVER_ADDRESS: ":8000"
       HTTP_CONTROL_SERVER_AUTH_CONFIG_FILEPATH: /gluetun/auth/config.toml
       TZ: ${TZ}
@@ -79,11 +80,11 @@ services:
     volumes:
       - ${QBIT_CONFIG}:/config
       - ${QBIT_DOWNLOADS}:/downloads
-      # Same disk at the host path so WebUI "save to /mnt/usbdrive/Downloads" works.
-      - ${QBIT_DOWNLOADS}:/mnt/usbdrive/Downloads
+      # Same path inside the container so a save path set to the host path resolves.
+      - ${QBIT_DOWNLOADS}:${QBIT_DOWNLOADS}
       # Category save paths (TV / Movies) must exist inside this container.
-      - /mnt/usbdrive/TV:/mnt/usbdrive/TV
-      - /mnt/usbdrive/Movies:/mnt/usbdrive/Movies
+      - ${MEDIA_ROOT}/TV:${MEDIA_ROOT}/TV
+      - ${MEDIA_ROOT}/Movies:${MEDIA_ROOT}/Movies
     stop_grace_period: 10s
     restart: unless-stopped
     security_opt:
@@ -154,8 +155,8 @@ services:
       QBIT_URL: http://127.0.0.1:${QBIT_WEBUI_PORT}
       QBIT_USER: ${QBIT_USER:-}
       QBIT_PASS: ${QBIT_PASS:-}
-      TV_DIR: /mnt/usbdrive/TV
-      MOVIE_DIR: /mnt/usbdrive/Movies
+      TV_DIR: ${MEDIA_ROOT}/TV
+      MOVIE_DIR: ${MEDIA_ROOT}/Movies
       STATE_PATH: /var/lib/qbit-organize/state.json
       MOVE_UID: ${QBIT_PUID}
       MOVE_GID: ${QBIT_PGID}
@@ -166,9 +167,9 @@ services:
       - ./helpers/qbit_organize.py:/app/qbit_organize.py:ro
       - ${QBIT_ORGANIZE_DATA}:/var/lib/qbit-organize
       - ${QBIT_DOWNLOADS}:/downloads
-      - ${QBIT_DOWNLOADS}:/mnt/usbdrive/Downloads
-      - /mnt/usbdrive/TV:/mnt/usbdrive/TV
-      - /mnt/usbdrive/Movies:/mnt/usbdrive/Movies
+      - ${QBIT_DOWNLOADS}:${QBIT_DOWNLOADS}
+      - ${MEDIA_ROOT}/TV:${MEDIA_ROOT}/TV
+      - ${MEDIA_ROOT}/Movies:${MEDIA_ROOT}/Movies
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
@@ -195,7 +196,7 @@ services:
       - no-new-privileges:true
 
   qbit-bridge:
-    image: puck-plex-chat:local
+    image: ${CHAT_IMAGE:-puck-plex-chat:local}
     container_name: qbit-bridge
     network_mode: service:gluetun
     depends_on:
@@ -217,7 +218,7 @@ services:
       - no-new-privileges:true
 
   ollama:
-    image: ollama/ollama:0.32.9
+    image: ollama/ollama:0.32.9@sha256:1685741456770df6e3cceb2a945a5f75e020f658d1701509668d6f4688f1dd3f
     container_name: ollama
     environment:
       TZ: ${TZ}
@@ -233,7 +234,7 @@ services:
       - no-new-privileges:true
 
   ollama-pull:
-    image: ollama/ollama:0.32.9
+    image: ollama/ollama:0.32.9@sha256:1685741456770df6e3cceb2a945a5f75e020f658d1701509668d6f4688f1dd3f
     container_name: ollama-pull
     depends_on:
       - ollama
@@ -245,7 +246,7 @@ services:
 
   plex-chat:
     build: ./plex-chat
-    image: puck-plex-chat:local
+    image: ${CHAT_IMAGE:-puck-plex-chat:local}
     container_name: plex-chat
     network_mode: host
     depends_on:
@@ -260,6 +261,7 @@ services:
       PLEX_URL: http://127.0.0.1:32400
       GLUETUN_CTRL: http://127.0.0.1:8000
       PORT: ${PLEX_CHAT_PORT}
+      PLEX_CHAT_BIND: ${LAN_IP}
       TZ: ${TZ}
       QBIT_SAVE_HOST: ${QBIT_DOWNLOADS}
       TV_DIR: /tv
@@ -272,22 +274,24 @@ services:
       HOST_PROC: /host/proc
       HOST_ROOT: /host-root
       HOST_USB: /tv
+    command: ["python", "-u", "/app/app.py"]
     volumes:
       - ./plex-chat/app.py:/app/app.py:ro
+      - ./plex-chat/imdb_catalog.py:/app/imdb_catalog.py:ro
       - ./plex-chat/static:/app/static:ro
       - ${PLEX_QBIT_DATA}:/var/lib/plex-qbit:ro
       - ${QBIT_ORGANIZE_DATA}:/var/lib/qbit-organize:ro
-      - /mnt/usbdrive/TV:/tv:ro
-      - /mnt/usbdrive/Movies:/movies:ro
-      - ${IMDB_DAILY_DATA:-/home/klg/imdb-daily}:/var/lib/imdb-daily:ro
+      - ${MEDIA_ROOT}/TV:/tv:ro
+      - ${MEDIA_ROOT}/Movies:/movies:ro
+      - ${IMDB_DAILY_DATA}:/var/lib/imdb-daily:ro
       - /proc:/host/proc:ro
-      - /home/klg:/host-root:ro
+      - ${HOST_ROOT_PATH}:/host-root:ro
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
 
   imdb-daily:
-    image: puck-plex-chat:local
+    image: ${CHAT_IMAGE:-puck-plex-chat:local}
     container_name: imdb-daily
     network_mode: host
     depends_on:
@@ -305,25 +309,28 @@ services:
     volumes:
       - ./plex-chat/app.py:/app/app.py:ro
       - ./plex-chat/imdb_daily.py:/app/imdb_daily.py:ro
-      - /mnt/usbdrive/Movies:/movies:ro
-      - /mnt/usbdrive/TV:/tv:ro
-      - ${IMDB_DAILY_DATA:-/home/klg/imdb-daily}:/var/lib/imdb-daily
+      - ./plex-chat/imdb_catalog.py:/app/imdb_catalog.py:ro
+      - ${MEDIA_ROOT}/Movies:/movies:ro
+      - ${MEDIA_ROOT}/TV:/tv:ro
+      - ${IMDB_DAILY_DATA}:/var/lib/imdb-daily
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
 
   sonarr:
-    image: lscr.io/linuxserver/sonarr:latest
+    image: lscr.io/linuxserver/sonarr:latest@sha256:c19aa4ecdf03d73e1d5c901da33744cb7eb4d921f89bafed1ca264601d7fa224
     container_name: sonarr
     environment:
       PUID: ${QBIT_PUID}
       PGID: ${QBIT_PGID}
       TZ: ${TZ}
-      SONARR__AUTH__METHOD: External
-      SONARR__AUTH__REQUIRED: DisabledForLocalAddresses
+      SONARR__AUTH__METHOD: Forms
+      SONARR__AUTH__REQUIRED: Enabled
+      SONARR__AUTH__USERNAME: ${SONARR_AUTH_USER}
+      SONARR__AUTH__PASSWORD: ${SONARR_AUTH_PASSWORD}
     volumes:
       - ${SONARR_CONFIG}:/config
-      - /mnt/usbdrive/TV:/tv
+      - ${MEDIA_ROOT}/TV:/tv
     ports:
       - ${LAN_IP}:8989:8989
     restart: unless-stopped
@@ -331,17 +338,19 @@ services:
       - no-new-privileges:true
 
   radarr:
-    image: lscr.io/linuxserver/radarr:latest
+    image: lscr.io/linuxserver/radarr:latest@sha256:119aaa4a4f7349bcd2a136c5373a0d7925b5479915c7dfe0c0ad352db2a6d438
     container_name: radarr
     environment:
       PUID: ${QBIT_PUID}
       PGID: ${QBIT_PGID}
       TZ: ${TZ}
-      RADARR__AUTH__METHOD: External
-      RADARR__AUTH__REQUIRED: DisabledForLocalAddresses
+      RADARR__AUTH__METHOD: Forms
+      RADARR__AUTH__REQUIRED: Enabled
+      RADARR__AUTH__USERNAME: ${RADARR_AUTH_USER}
+      RADARR__AUTH__PASSWORD: ${RADARR_AUTH_PASSWORD}
     volumes:
       - ${RADARR_CONFIG}:/config
-      - /mnt/usbdrive/Movies:/movies
+      - ${MEDIA_ROOT}/Movies:/movies
     ports:
       - ${LAN_IP}:7878:7878
     restart: unless-stopped
@@ -349,7 +358,7 @@ services:
       - no-new-privileges:true
 
   bazarr:
-    image: lscr.io/linuxserver/bazarr:latest
+    image: lscr.io/linuxserver/bazarr:latest@sha256:3a820372f19fcb2981ea19fe4b5382934d67414afaba974bce831ddda0a64a02
     container_name: bazarr
     depends_on:
       - sonarr
@@ -360,8 +369,8 @@ services:
       TZ: ${TZ}
     volumes:
       - ${BAZARR_CONFIG}:/config
-      - /mnt/usbdrive/TV:/tv
-      - /mnt/usbdrive/Movies:/movies
+      - ${MEDIA_ROOT}/TV:/tv
+      - ${MEDIA_ROOT}/Movies:/movies
     ports:
       - ${LAN_IP}:6767:6767
     restart: unless-stopped
@@ -395,7 +404,7 @@ services:
     volumes:
       - ${VM_DATA}:/victoria-metrics-data
     ports:
-      - ${LAN_IP}:8428:8428
+      - 127.0.0.1:8428:8428
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
@@ -412,7 +421,7 @@ services:
     volumes:
       - ${VL_DATA}:/vlogs
     ports:
-      - ${LAN_IP}:9428:9428
+      - 127.0.0.1:9428:9428
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
@@ -488,8 +497,8 @@ services:
       PLEX_URL: http://127.0.0.1:32400
       PLEX_TOKEN: ${PLEX_TOKEN:-}
       PLEX_PREFS: /prefs.xml
-      VM_URL: http://${LAN_IP}:8428
-      VL_URL: http://${LAN_IP}:9428
+      VM_URL: http://127.0.0.1:8428
+      VL_URL: http://127.0.0.1:9428
       GLUETUN_URL: http://127.0.0.1:8000
       GLUETUN_CONTROL_USER: ${GLUETUN_CONTROL_USER:-}
       GLUETUN_CONTROL_PASSWORD: ${GLUETUN_CONTROL_PASSWORD:-}

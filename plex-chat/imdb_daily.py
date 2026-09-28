@@ -8,7 +8,6 @@ weighted rating.
 """
 from __future__ import annotations
 
-import gzip
 import json
 import os
 import random
@@ -18,6 +17,8 @@ import urllib.request
 from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
+
+import imdb_catalog
 
 CHART_URL = os.environ.get(
     "IMDB_CHART_URL", "https://www.imdb.com/chart/top/?ref_=hm_nv_menu"
@@ -117,6 +118,35 @@ def top250_from_tables(basics: list[dict], ratings: list[dict]) -> list[dict]:
     mean = (rating_sum / rating_n) if rating_n else 7.0
     for imdb_id, rating, votes in pending:
         title, year = movies[imdb_id]
+        scored.append((weighted_rating(rating, votes, mean), imdb_id, title, year, rating, votes))
+    scored.sort(key=lambda item: (-item[0], -item[5], item[2].lower()))
+    return [
+        {"id": imdb_id, "title": title, "year": year, "rank": index}
+        for index, (_score, imdb_id, title, year, _rating, _votes) in enumerate(scored[:250], start=1)
+    ]
+
+
+def top250_from_catalog(titles: list[dict], mean: float) -> list[dict]:
+    scored = []
+    for row in titles:
+        if row.get("kind") != "movie":
+            continue
+        genres = row.get("genres") or []
+        if "Documentary" in genres:
+            continue
+        runtime = row.get("runtime")
+        if runtime is not None and int(runtime) < MIN_RUNTIME:
+            continue
+        try:
+            rating = float(row["rating"])
+            votes = int(row["votes"])
+            year = int(row["year"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        title = str(row.get("title") or "").strip()
+        imdb_id = str(row.get("id") or "")
+        if not title or not imdb_id or votes < MIN_VOTES:
+            continue
         scored.append((weighted_rating(rating, votes, mean), imdb_id, title, year, rating, votes))
     scored.sort(key=lambda item: (-item[0], -item[5], item[2].lower()))
     return [
@@ -226,16 +256,6 @@ def _fetch_chart_page() -> list[dict]:
     return rows if len(rows) >= 200 else []
 
 
-def _iter_tsv(path: Path):
-    with gzip.open(path, "rt", encoding="utf-8", newline="") as handle:
-        header = handle.readline().rstrip("\n").split("\t")
-        for line in handle:
-            parts = line.rstrip("\n").split("\t")
-            if len(parts) < len(header):
-                continue
-            yield dict(zip(header, parts))
-
-
 def _chart_from_datasets() -> list[dict]:
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
     basics_path = CACHE_DIR / "title.basics.tsv.gz"
@@ -244,30 +264,8 @@ def _chart_from_datasets() -> list[dict]:
     _download(BASICS_URL, basics_path)
     _download(RATINGS_URL, ratings_path)
     print("ranking feature films with at least 25000 votes", flush=True)
-    basics = []
-    for row in _iter_tsv(basics_path):
-        if row.get("titleType") != "movie":
-            continue
-        basics.append(
-            {
-                "tconst": row.get("tconst"),
-                "titleType": "movie",
-                "primaryTitle": row.get("primaryTitle"),
-                "startYear": row.get("startYear"),
-                "runtimeMinutes": row.get("runtimeMinutes"),
-                "genres": row.get("genres"),
-                "isAdult": row.get("isAdult"),
-            }
-        )
-    ratings = [
-        {
-            "tconst": row.get("tconst"),
-            "averageRating": row.get("averageRating"),
-            "numVotes": row.get("numVotes"),
-        }
-        for row in _iter_tsv(ratings_path)
-    ]
-    chart = top250_from_tables(basics, ratings)
+    catalog = imdb_catalog.ensure_catalog(CACHE_DIR)
+    chart = top250_from_catalog(catalog["titles"], float(catalog["mean"]))
     if len(chart) < 50:
         raise RuntimeError(f"IMDb top list too short ({len(chart)})")
     print(
@@ -299,7 +297,7 @@ def _queue(title: str, year: int) -> dict:
     import app
 
     raw = app.run_search(title, "movies", year, extra_patterns=[f"{title} {year}"])
-    rank_year = year if year >= 1950 else None
+    rank_year = year if year >= 1900 else None
     picks = app.top_unique(raw, "movies", title=title, year=rank_year)
     chosen = None
     for pick in picks:
@@ -309,7 +307,7 @@ def _queue(title: str, year: int) -> dict:
             break
     if not chosen:
         return {"status": "miss", "detail": "no seeded torrent with that year"}
-    existing = app._find_torrent(chosen["name"], chosen["url"], fallback_latest=False)
+    existing = app._find_torrent(chosen["name"], chosen["url"])
     if existing:
         return {"status": "already", "name": chosen["name"], "seeds": chosen["seeds"]}
     data = {"urls": chosen["url"], "category": app.MOVIE_CATEGORY}
@@ -374,22 +372,43 @@ def seconds_until_next_midnight(now: datetime) -> int:
     return max(1, int((nxt - now).total_seconds()))
 
 
+def _warm_catalog() -> None:
+    try:
+        catalog = imdb_catalog.ensure_catalog(CACHE_DIR)
+    except FileNotFoundError as exc:
+        print(f"imdb catalog waiting for datasets: {exc}", flush=True)
+        return
+    except Exception as exc:
+        print(f"imdb catalog failed: {type(exc).__name__}: {exc}", flush=True)
+        return
+    print(f"imdb catalog titles={len(catalog.get('titles') or [])}", flush=True)
+
+
+def loop_action(now: datetime) -> str:
+    """Pick immediately inside the window. Build the catalog only outside it."""
+    return "pick" if in_run_window(now) else "warm"
+
+
 def main() -> None:
     while True:
         now = _now()
-        if not in_run_window(now):
-            wait = seconds_until_next_midnight(now)
-            print(f"outside midnight–6am; sleeping {wait}s", flush=True)
+        if loop_action(now) == "pick":
+            try:
+                run_once()
+            except Exception as exc:
+                print(f"daily run failed: {type(exc).__name__}: {exc}", flush=True)
+                time.sleep(900)
+                continue
+            wait = seconds_until_next_midnight(_now())
+            print(f"sleeping {wait}s until the next pick", flush=True)
             time.sleep(wait)
             continue
-        try:
-            run_once()
-        except Exception as exc:
-            print(f"daily run failed: {type(exc).__name__}: {exc}", flush=True)
-            time.sleep(900)
+        _warm_catalog()
+        now = _now()
+        if loop_action(now) == "pick":
             continue
-        wait = seconds_until_next_midnight(_now())
-        print(f"sleeping {wait}s until the next pick", flush=True)
+        wait = seconds_until_next_midnight(now)
+        print(f"outside midnight–6am; sleeping {wait}s", flush=True)
         time.sleep(wait)
 
 

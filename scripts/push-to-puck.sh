@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Copy this repo to puck over SSH. Run from the LAN (this script cannot reach
-# 192.168.1.8 from a cloud VM).
+# Copy this repo to the host in REMOTE over SSH.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -9,8 +8,8 @@ set -a
 source "$ROOT/.env"
 set +a
 
-REMOTE="${REMOTE:-klg@puck}"
-REMOTE_DIR="${REMOTE_DIR:-/home/klg/puck-plex}"
+REMOTE="${REMOTE:?Set REMOTE in .env}"
+REMOTE_DIR="${REMOTE_DIR:?Set REMOTE_DIR in .env}"
 
 ssh -o BatchMode=yes -o ConnectTimeout=8 "$REMOTE" "mkdir -p '$REMOTE_DIR'"
 # Do not --delete: puck may have extra compose services and host-only files.

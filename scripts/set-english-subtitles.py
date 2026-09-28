@@ -260,7 +260,7 @@ def main() -> None:
     args = parser.parse_args()
 
     load_dotenv()
-    plex = Plex(os.environ.get("PLEX_URL", "http://192.168.1.8:32400"), plex_token())
+    plex = Plex(os.environ.get("PLEX_URL", f"http://{os.environ['LAN_IP']}:32400"), plex_token())
     ident = plex.get("/identity")
     print(
         f"Connected to {ident.attrib.get('machineIdentifier', 'plex')} "

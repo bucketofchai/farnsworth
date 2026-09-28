@@ -19,7 +19,8 @@ load_dotenv = mod.load_dotenv
 
 def main() -> None:
     load_dotenv()
-    lan = os.environ.get("LAN_IP", "192.168.1.8")
+    lan = os.environ["LAN_IP"]
+    media_tv = os.environ["MEDIA_ROOT"].rstrip("/") + "/TV"
     yaml = Path(os.environ["BAZARR_CONFIG"]) / "config" / "config.yaml"
     headers = {"X-API-KEY": bazarr_key(yaml)}
     base = f"http://{lan}:6767/api"
@@ -36,7 +37,7 @@ def main() -> None:
     code, eps = http("GET", f"{base}/episodes?seriesid%5B%5D=4", headers)
 
     def needs_sidecar(row: dict) -> bool:
-        video = Path(str(row.get("path") or "").replace("/tv/", "/mnt/usbdrive/TV/", 1))
+        video = Path(str(row.get("path") or "").replace("/tv/", f"{media_tv}/", 1))
         if video.suffix.lower() in {".mkv", ".mp4", ".m4v"}:
             for suffix in (".en.srt", ".en.hi.srt", ".srt"):
                 if video.with_name(video.stem + suffix).is_file():
@@ -98,7 +99,7 @@ def main() -> None:
         time.sleep(2)
     print(f"done ok={ok} fail={fail}")
     for season in seasons:
-        folder = Path(f"/mnt/usbdrive/TV/Criminal Minds (2005)/Season {season:02d}")
+        folder = Path(media_tv) / "Criminal Minds (2005)" / f"Season {season:02d}"
         srts = sorted(folder.glob("*.srt")) if folder.is_dir() else []
         print(f"Season {season:02d} srts={len(srts)}")
 

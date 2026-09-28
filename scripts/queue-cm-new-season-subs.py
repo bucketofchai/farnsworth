@@ -20,7 +20,7 @@ SEASONS = (13, 14, 15, 16)
 
 def main() -> None:
     mod.load_dotenv()
-    lan = os.environ.get("LAN_IP", "192.168.1.8")
+    lan = os.environ["LAN_IP"]
     sonarr = f"http://{lan}:8989"
     bazarr = f"http://{lan}:6767"
     sonarr_h = {
